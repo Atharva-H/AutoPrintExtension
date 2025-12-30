@@ -25,8 +25,7 @@ export const CONFIG = {
   // Notification settings
   NOTIFICATIONS: {
     PRINT_SUCCESS: 'autoprint_success',
-    PRINT_ERROR: 'autoprint_error',
-    ICON_URL: '/assets/icons/icon-128.png'
+    PRINT_ERROR: 'autoprint_error'
   },
 
   // Supported file extensions for printing
@@ -37,6 +36,17 @@ export const CONFIG = {
     'html', 'htm', 'xml', 'json'
   ]
 };
+
+/**
+ * Get the notification icon URL (must be called at runtime)
+ * @returns {string} Icon URL
+ */
+export function getNotificationIconUrl() {
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+    return chrome.runtime.getURL('assets/icons/icon-128.png');
+  }
+  return 'assets/icons/icon-128.png';
+}
 
 /**
  * Get default settings object
@@ -62,4 +72,3 @@ export function validateSettings(settings) {
     maxHistoryItems: typeof settings?.maxHistoryItems === 'number' ? settings.maxHistoryItems : defaults.maxHistoryItems
   };
 }
-

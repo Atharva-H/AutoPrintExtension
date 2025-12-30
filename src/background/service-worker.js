@@ -4,43 +4,55 @@
  */
 
 import { loadSettings, addToPrintHistory, onSettingsChange } from '../shared/storage.js';
-import { CONFIG } from '../shared/config.js';
+import { CONFIG, getNotificationIconUrl } from '../shared/config.js';
 
 // Current settings cache
 let currentSettings = null;
+let isInitialized = false;
 
 /**
  * Initialize the service worker
  */
 async function initialize() {
+  if (isInitialized) return;
+  
   console.log('[AutoPrint] Service worker initializing...');
   
-  // Load initial settings
-  currentSettings = await loadSettings();
-  console.log('[AutoPrint] Initial settings loaded:', currentSettings);
-  
-  // Listen for settings changes
-  onSettingsChange((newSettings) => {
-    console.log('[AutoPrint] Settings updated:', newSettings);
-    currentSettings = newSettings;
+  try {
+    // Load initial settings
+    currentSettings = await loadSettings();
+    console.log('[AutoPrint] Initial settings loaded:', currentSettings);
+    
+    // Listen for settings changes
+    onSettingsChange((newSettings) => {
+      console.log('[AutoPrint] Settings updated:', newSettings);
+      currentSettings = newSettings;
+      updateBadge();
+    });
+    
+    // Update badge on startup
     updateBadge();
-  });
-  
-  // Update badge on startup
-  updateBadge();
-  
-  console.log('[AutoPrint] Service worker initialized');
+    
+    isInitialized = true;
+    console.log('[AutoPrint] Service worker initialized successfully');
+  } catch (error) {
+    console.error('[AutoPrint] Initialization error:', error);
+  }
 }
 
 /**
  * Update the extension badge to show enabled/disabled status
  */
 function updateBadge() {
-  const badgeText = currentSettings?.enabled ? 'ON' : '';
-  const badgeColor = currentSettings?.enabled ? '#22c55e' : '#6b7280';
-  
-  chrome.action.setBadgeText({ text: badgeText });
-  chrome.action.setBadgeBackgroundColor({ color: badgeColor });
+  try {
+    const badgeText = currentSettings?.enabled ? 'ON' : '';
+    const badgeColor = currentSettings?.enabled ? '#22c55e' : '#6b7280';
+    
+    chrome.action.setBadgeText({ text: badgeText });
+    chrome.action.setBadgeBackgroundColor({ color: badgeColor });
+  } catch (error) {
+    console.error('[AutoPrint] Badge update error:', error);
+  }
 }
 
 /**
@@ -83,6 +95,12 @@ function checkFilters(filename) {
     details: []
   };
   
+  if (!currentSettings) {
+    result.matches = false;
+    result.details.push('Settings not loaded');
+    return result;
+  }
+  
   const { prefixFilter, extensionFilter } = currentSettings;
   
   // Check prefix filter
@@ -119,17 +137,21 @@ function showNotification(title, message, type = 'success') {
     return;
   }
   
-  const notificationId = type === 'success' 
-    ? CONFIG.NOTIFICATIONS.PRINT_SUCCESS 
-    : CONFIG.NOTIFICATIONS.PRINT_ERROR;
-  
-  chrome.notifications.create(notificationId + '_' + Date.now(), {
-    type: 'basic',
-    iconUrl: CONFIG.NOTIFICATIONS.ICON_URL,
-    title: title,
-    message: message,
-    priority: 1
-  });
+  try {
+    const notificationId = type === 'success' 
+      ? CONFIG.NOTIFICATIONS.PRINT_SUCCESS 
+      : CONFIG.NOTIFICATIONS.PRINT_ERROR;
+    
+    chrome.notifications.create(notificationId + '_' + Date.now(), {
+      type: 'basic',
+      iconUrl: getNotificationIconUrl(),
+      title: title,
+      message: message,
+      priority: 1
+    });
+  } catch (error) {
+    console.error('[AutoPrint] Notification error:', error);
+  }
 }
 
 /**
@@ -142,9 +164,9 @@ async function printFile(downloadItem) {
   
   try {
     console.log('[AutoPrint] Attempting to print:', filename);
+    console.log('[AutoPrint] File path:', downloadItem.filename);
     
     // Open the file in a new tab for printing
-    // Chrome doesn't have a direct API to print files, so we open them and trigger print
     const fileUrl = 'file://' + downloadItem.filename;
     
     // Create a tab with the file
@@ -153,16 +175,47 @@ async function printFile(downloadItem) {
       active: false 
     });
     
-    // Wait a bit for the file to load
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    console.log('[AutoPrint] Tab created:', tab.id);
+    
+    // Wait for the tab to load
+    await new Promise((resolve) => {
+      const listener = (tabId, info) => {
+        if (tabId === tab.id && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
+      };
+      chrome.tabs.onUpdated.addListener(listener);
+      
+      // Timeout fallback
+      setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }, 3000);
+    });
+    
+    // Additional wait for content to render
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     // Execute print command
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        window.print();
-      }
-    });
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          window.print();
+        }
+      });
+      console.log('[AutoPrint] Print command executed');
+    } catch (scriptError) {
+      console.error('[AutoPrint] Script execution error:', scriptError);
+      // Try alternative approach - just show notification that file is ready
+      showNotification(
+        'AutoPrint: File Ready',
+        `"${filename}" opened for printing. Press Ctrl+P to print.`,
+        'success'
+      );
+      return true;
+    }
     
     // Log success
     await addToPrintHistory({
@@ -183,18 +236,22 @@ async function printFile(downloadItem) {
       chrome.tabs.remove(tab.id).catch(() => {
         // Tab might already be closed
       });
-    }, 3000);
+    }, 5000);
     
     return true;
   } catch (error) {
     console.error('[AutoPrint] Error printing file:', error);
     
-    await addToPrintHistory({
-      filename: filename,
-      fullPath: downloadItem.filename,
-      status: 'error',
-      error: error.message
-    });
+    try {
+      await addToPrintHistory({
+        filename: filename,
+        fullPath: downloadItem.filename,
+        status: 'error',
+        error: error.message
+      });
+    } catch (historyError) {
+      console.error('[AutoPrint] History error:', historyError);
+    }
     
     showNotification(
       'AutoPrint: Print Failed',
@@ -211,9 +268,16 @@ async function printFile(downloadItem) {
  * @param {Object} delta - Download delta object
  */
 async function handleDownloadChanged(delta) {
+  console.log('[AutoPrint] Download changed:', delta);
+  
   // We only care about completed downloads
   if (!delta.state || delta.state.current !== 'complete') {
     return;
+  }
+  
+  // Ensure we're initialized
+  if (!isInitialized) {
+    await initialize();
   }
   
   // Check if extension is enabled
@@ -263,12 +327,28 @@ initialize();
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[AutoPrint] Extension installed/updated:', details.reason);
   
+  // Re-initialize
+  initialize();
+  
   if (details.reason === 'install') {
     // Open options page on first install
     chrome.runtime.openOptionsPage();
   }
 });
 
+// Keep service worker alive by listening to messages
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[AutoPrint] Message received:', message);
+  
+  if (message.type === 'getStatus') {
+    sendResponse({
+      enabled: currentSettings?.enabled || false,
+      initialized: isInitialized
+    });
+  }
+  
+  return true;
+});
+
 // Export for testing (if needed)
 export { checkFilters, getFilename, getFileExtension };
-
