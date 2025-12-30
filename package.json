@@ -1,0 +1,29 @@
+{
+  "name": "autoprint-extension",
+  "version": "1.0.0",
+  "description": "Chrome extension to automatically print downloaded files based on filename prefix and extension filters",
+  "private": true,
+  "scripts": {
+    "generate-icons": "node scripts/generate-icons.js",
+    "build": "npm run generate-icons",
+    "package": "zip -r autoprint-extension.zip . -x '*.git*' -x 'node_modules/*' -x '*.DS_Store' -x 'package*.json'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/AutoPrintExtension.git"
+  },
+  "keywords": [
+    "chrome-extension",
+    "browser-extension",
+    "auto-print",
+    "printing",
+    "downloads",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "devDependencies": {}
+}

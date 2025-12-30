@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "AutoPrint - Automatic File Printer",
+  "version": "1.0.0",
+  "description": "Automatically print downloaded files based on filename prefix and extension filters",
+  "permissions": [
+    "downloads",
+    "storage",
+    "notifications",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "file://*/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon-16.png",
+      "32": "assets/icons/icon-32.png",
+      "48": "assets/icons/icon-48.png",
+      "128": "assets/icons/icon-128.png"
+    },
+    "default_title": "AutoPrint Settings"
+  },
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
+  },
+  "options_page": "src/options/options.html",
+  "minimum_chrome_version": "88"
+}
+
