@@ -34,6 +34,12 @@
     "128": "assets/icons/icon-128.png"
   },
   "options_page": "src/options/options.html",
-  "minimum_chrome_version": "88"
+  "minimum_chrome_version": "88",
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
 
