@@ -169,15 +169,15 @@ async function printFile(downloadItem) {
     // Open the file in a new tab for printing
     const fileUrl = 'file://' + downloadItem.filename;
     
-    // Create a tab with the file
+    // Create a tab with the file - make it ACTIVE so user can see it
     const tab = await chrome.tabs.create({ 
       url: fileUrl,
-      active: false 
+      active: true  // Make the tab active so user sees the print dialog
     });
     
     console.log('[AutoPrint] Tab created:', tab.id);
     
-    // Wait for the tab to load
+    // Wait for the tab to load completely
     await new Promise((resolve) => {
       const listener = (tabId, info) => {
         if (tabId === tab.id && info.status === 'complete') {
@@ -187,37 +187,46 @@ async function printFile(downloadItem) {
       };
       chrome.tabs.onUpdated.addListener(listener);
       
-      // Timeout fallback
+      // Timeout fallback after 5 seconds
       setTimeout(() => {
         chrome.tabs.onUpdated.removeListener(listener);
         resolve();
-      }, 3000);
+      }, 5000);
     });
     
-    // Additional wait for content to render
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Additional wait for content to fully render
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Execute print command
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
+          // Trigger print dialog
           window.print();
         }
       });
       console.log('[AutoPrint] Print command executed');
-    } catch (scriptError) {
-      console.error('[AutoPrint] Script execution error:', scriptError);
-      // Try alternative approach - just show notification that file is ready
+      
+      // Show notification that print dialog was opened
       showNotification(
-        'AutoPrint: File Ready',
-        `"${filename}" opened for printing. Press Ctrl+P to print.`,
+        'AutoPrint: Print Dialog Opened',
+        `"${filename}" - Please complete printing in the dialog. The tab will stay open.`,
         'success'
       );
-      return true;
+      
+    } catch (scriptError) {
+      console.error('[AutoPrint] Script execution error:', scriptError);
+      // For file:// URLs, scripting might be blocked
+      // Show notification that file is open for manual printing
+      showNotification(
+        'AutoPrint: File Opened',
+        `"${filename}" is open. Press Cmd+P (Mac) or Ctrl+P (Windows) to print.`,
+        'success'
+      );
     }
     
-    // Log success
+    // Log to history
     await addToPrintHistory({
       filename: filename,
       fullPath: downloadItem.filename,
@@ -225,18 +234,11 @@ async function printFile(downloadItem) {
       fileSize: downloadItem.fileSize
     });
     
-    showNotification(
-      'AutoPrint: File Sent to Printer',
-      `"${filename}" has been sent to the printer.`,
-      'success'
-    );
+    // DO NOT close the tab automatically!
+    // Let the user close it after they finish with the print dialog
+    // The tab stays open so the print dialog can complete
     
-    // Close the tab after a delay to allow print dialog
-    setTimeout(() => {
-      chrome.tabs.remove(tab.id).catch(() => {
-        // Tab might already be closed
-      });
-    }, 5000);
+    console.log('[AutoPrint] Tab left open for user to complete printing');
     
     return true;
   } catch (error) {
